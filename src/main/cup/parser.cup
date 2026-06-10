@@ -1,0 +1,194 @@
+/* Compilador Scheme -> Python usando CUP */
+
+package org.example;
+
+import java_cup.runtime.*;
+import java.util.*;
+
+/* Terminais */
+terminal Object NUMBER;
+terminal String IDENTIFIER, STRING, CHARACTER;
+terminal Boolean TRUE, FALSE;
+terminal DEFINE, LAMBDA, IF, BEGIN, SET;
+terminal LET, LET_STAR, LETREC, COND, ELSE, AND, OR, DO, DELAY;
+terminal LPAREN, RPAREN, DOT, ARROW;
+terminal QUOTE_CHAR, BACKQUOTE, COMMA, COMMA_AT;
+
+/* Não-terminais base*/
+non terminal ProgramNode program;
+non terminal ASTNode expr;
+non terminal ASTNode quoted;
+non terminal ASTNode list_contents;
+non terminal java.util.LinkedList<ASTNode> list_rest;
+non terminal java.util.List<ASTNode> body;
+
+/* Não-terminais auxiliares*/
+non terminal FormalsNode formals;
+non terminal java.util.List<String> id_list;
+non terminal java.util.List<ASTNode> bindings;
+non terminal BindingNode binding;
+non terminal java.util.List<ASTNode> cond_clauses;
+non terminal ASTNode cond_clause;
+non terminal java.util.List<ASTNode> do_bindings;
+non terminal DoBindingNode do_binding;
+
+/* Procedências */
+precedence right QUOTE_CHAR, BACKQUOTE, COMMA, COMMA_AT;
+
+program ::= program:p expr:e
+            {:
+                p.addExpression(e);
+                RESULT = p;
+            :}
+          | expr:e
+            {:
+                ProgramNode prog = new ProgramNode();
+                prog.addExpression(e);
+                RESULT = prog;
+            :}
+          ;
+
+expr ::= NUMBER:n       {: RESULT = new NumberNode((Number)n); :}
+       | STRING:s       {: RESULT = new StringNode(s); :}
+       | CHARACTER:c    {: RESULT = new CharacterNode(c); :}
+       | TRUE           {: RESULT = new BooleanNode(true); :}
+       | FALSE          {: RESULT = new BooleanNode(false); :}
+       | IDENTIFIER:id  {: RESULT = new IdentifierNode(id); :}
+       | quoted:q       {: RESULT = q; :}
+       | LPAREN list_contents:lc RPAREN {: RESULT = lc; :}
+       | LPAREN RPAREN  {: RESULT = new ListNode(); :}
+       ;
+
+quoted ::= QUOTE_CHAR expr:e   {: RESULT = new QuoteNode(e); :}
+         | BACKQUOTE expr:e    {: RESULT = new QuasiquoteNode(e); :}
+         | COMMA expr:e        {: RESULT = new UnquoteNode(e); :}
+         | COMMA_AT expr:e     {: RESULT = new UnquoteSplicingNode(e); :}
+         ;
+
+/* * Regras Auxiliares de Estrutura*/
+
+body ::= expr:e {:
+             List<ASTNode> l = new ArrayList<>();
+             l.add(e);
+             RESULT = l;
+         :}
+       | body:l expr:e {:
+             l.add(e);
+             RESULT = l;
+         :}
+       ;
+
+id_list ::= IDENTIFIER:id {:
+                List<String> l = new ArrayList<>();
+                l.add(id);
+                RESULT = l;
+            :}
+          | id_list:l IDENTIFIER:id {:
+                l.add(id);
+                RESULT = l;
+            :}
+          ;
+
+formals ::= IDENTIFIER:id {: RESULT = new FormalsNode(id); :}
+          | LPAREN RPAREN {: RESULT = new FormalsNode(new ArrayList<String>()); :}
+          | LPAREN id_list:list RPAREN {: RESULT = new FormalsNode(list); :}
+          | LPAREN id_list:list DOT IDENTIFIER:rest RPAREN {: RESULT = new FormalsNode(list, rest); :}
+          ;
+
+bindings ::= /* empty */ {: RESULT = new ArrayList<ASTNode>(); :}
+           | bindings:l binding:b {: l.add(b); RESULT = l; :}
+           ;
+
+binding ::= LPAREN IDENTIFIER:id expr:val RPAREN {: RESULT = new BindingNode(id, val); :} ;
+
+cond_clauses ::= cond_clause:c {:
+                     List<ASTNode> l = new ArrayList<>();
+                     l.add(c);
+                     RESULT = l;
+                 :}
+               | cond_clauses:l cond_clause:c {:
+                     l.add(c);
+                     RESULT = l;
+                 :}
+               ;
+
+cond_clause ::= LPAREN expr:test body:b RPAREN {: RESULT = new CondClauseNode(test, b); :}
+              | LPAREN expr:test ARROW expr:func RPAREN {: RESULT = new CondArrowNode(test, func); :}
+              | LPAREN ELSE body:b RPAREN {: RESULT = new CondElseNode(b); :}
+              ;
+
+do_bindings ::= /* empty */ {: RESULT = new ArrayList<ASTNode>(); :}
+              | do_bindings:l do_binding:b {: l.add(b); RESULT = l; :}
+              ;
+
+do_binding ::= LPAREN IDENTIFIER:id expr:init expr:step RPAREN {: RESULT = new DoBindingNode(id, init, step); :}
+             | LPAREN IDENTIFIER:id expr:init RPAREN {: RESULT = new DoBindingNode(id, init, null); :}
+             ;
+
+list_rest ::= expr:e
+              {:
+                  LinkedList<ASTNode> list = new LinkedList<>();
+                  list.add(e);
+                  RESULT = list;
+              :}
+            | expr:e list_rest:rest
+              {:
+                  rest.addFirst(e);
+                  RESULT = rest;
+              :}
+            ;
+
+/* Estruturas e Formas Especiais*/
+
+list_contents ::= DEFINE IDENTIFIER:name expr:value
+                  {: RESULT = new DefineNode(name, value); :}
+
+                | DEFINE LPAREN IDENTIFIER:name id_list:args RPAREN body:b
+                  {: RESULT = new DefineNode(name, new LambdaNode(new FormalsNode(args), b)); :}
+
+                | LAMBDA formals:f body:b
+                  {: RESULT = new LambdaNode(f, b); :}
+
+                | IF expr:test expr:then expr:els
+                  {: RESULT = new IfNode(test, then, els); :}
+
+                | IF expr:test expr:then
+                  {: RESULT = new IfNode(test, then, new BooleanNode(false)); :}
+
+                | BEGIN body:b
+                  {: RESULT = new BeginNode(b); :}
+
+                | SET IDENTIFIER:name expr:value
+                  {: RESULT = new SetNode(name, value); :}
+
+                | LET LPAREN bindings:binds RPAREN body:b
+                  {: RESULT = new LetNode(binds, b); :}
+
+                | LET IDENTIFIER:name LPAREN bindings:binds RPAREN body:b
+                  {: RESULT = new NamedLetNode(name, binds, b); :}
+
+                | LET_STAR LPAREN bindings:binds RPAREN body:b
+                  {: RESULT = new LetStarNode(binds, b); :}
+
+                | LETREC LPAREN bindings:binds RPAREN body:b
+                  {: RESULT = new LetRecNode(binds, b); :}
+
+                | AND body:b {: RESULT = new AndNode(b); :}
+
+                | OR body:b {: RESULT = new OrNode(b); :}
+
+                | COND cond_clauses:clauses {: RESULT = new CondNode(clauses); :}
+
+                | DO LPAREN do_bindings:binds RPAREN LPAREN expr:test body:btest RPAREN body:b
+                  {: RESULT = new DoNode(binds, test, btest, b); :}
+
+                | DELAY expr:e {: RESULT = new DelayNode(e); :}
+
+                | expr:func list_rest:args
+                  {:
+                      RESULT = new ProcedureCallNode(func, new ArrayList<>(args));
+                  :}
+
+                | expr:func
+                  {: RESULT = new ProcedureCallNode(func, new ArrayList<>()); :}
+                ;

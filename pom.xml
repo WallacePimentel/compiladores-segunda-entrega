@@ -26,24 +26,19 @@
 
     <build>
         <plugins>
-
+            <!-- Maven Compiler Plugin - explícito para garantir compilação com Java 11 -->
             <plugin>
-                <groupId>com.github.vbmacher</groupId>
-                <artifactId>cup-maven-plugin</artifactId>
-                <version>11b-20160615-3</version>
-                <executions>
-                    <execution>
-                        <phase>generate-sources</phase>
-                        <goals><goal>generate</goal></goals>
-                    </execution>
-                </executions>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
                 <configuration>
-                    <cupDefinition>src/main/cup/parser.cup</cupDefinition>
-                    <className>parser</className>
-                    <symbolsName>sym</symbolsName>
+                    <source>11</source>
+                    <target>11</target>
+                    <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
 
+            <!-- JFlex Plugin - Gerador de Scanner -->
             <plugin>
                 <groupId>de.jflex</groupId>
                 <artifactId>jflex-maven-plugin</artifactId>
@@ -58,9 +53,54 @@
                     <lexDefinitions>
                         <lexDefinition>src/main/jflex/scanner.jflex</lexDefinition>
                     </lexDefinitions>
+                    <outputDirectory>src/main/java</outputDirectory>
                 </configuration>
             </plugin>
 
+            <!-- CUP Plugin - Gerador de Parser -->
+            <plugin>
+                <groupId>com.github.vbmacher</groupId>
+                <artifactId>cup-maven-plugin</artifactId>
+                <version>11b-20160615-3</version>
+                <executions>
+                    <execution>
+                        <phase>generate-sources</phase>
+                        <goals><goal>generate</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <cupDefinition>src/main/cup/parser.cup</cupDefinition>
+                    <className>parser</className>
+                    <symbolsName>sym</symbolsName>
+                    <outputDirectory>src/main/java</outputDirectory>
+                    <accept-conflicts>true</accept-conflicts>
+                </configuration>
+            </plugin>
+
+            <!-- Maven Assembly Plugin - para criar JAR executável com dependências -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>org.example.Main</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                    <finalName>compilador-scheme</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>single</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
